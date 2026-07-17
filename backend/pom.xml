@@ -16,7 +16,7 @@
     <artifactId>biblioteca</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>biblioteca</name>
-    <description>TP1 InfNet - Monolito Spring Boot: Catalogo de Biblioteca</description>
+    <description>InfNet TP2 - Library catalog with durable persistence</description>
 
     <properties>
         <java.version>21</java.version>

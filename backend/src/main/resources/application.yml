@@ -3,28 +3,23 @@ spring:
     name: biblioteca
 
   datasource:
-    url: jdbc:h2:mem:biblioteca;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/biblioteca}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:biblioteca}
+    password: ${DB_PASSWORD:biblioteca}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
   jpa:
     hibernate:
-      ddl-auto: update
-    defer-datasource-initialization: true
+      ddl-auto: validate
+    open-in-view: false
     show-sql: false
     properties:
       hibernate:
         format_sql: true
-
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-
-  sql:
-    init:
-      mode: always
 
 server:
   port: 8080

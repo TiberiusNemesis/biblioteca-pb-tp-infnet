@@ -1,9 +1,12 @@
 package br.edu.infnet.biblioteca.service;
 
 import br.edu.infnet.biblioteca.model.Book;
+import br.edu.infnet.biblioteca.model.BookHistory;
+import br.edu.infnet.biblioteca.model.HistoryOperation;
 import br.edu.infnet.biblioteca.model.dto.BookRequest;
 import br.edu.infnet.biblioteca.model.exception.BookNotFoundException;
 import br.edu.infnet.biblioteca.model.exception.DuplicateIsbnException;
+import br.edu.infnet.biblioteca.repository.BookHistoryRepository;
 import br.edu.infnet.biblioteca.repository.BookRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,9 +18,11 @@ import java.util.List;
 public class BookService {
 
     private final BookRepository repository;
+    private final BookHistoryRepository historyRepository;
 
-    public BookService(BookRepository repository) {
+    public BookService(BookRepository repository, BookHistoryRepository historyRepository) {
         this.repository = repository;
+        this.historyRepository = historyRepository;
     }
 
     @Transactional(readOnly = true)
@@ -41,7 +46,9 @@ public class BookService {
                 request.isbn(),
                 request.publishedYear()
         );
-        return repository.save(book);
+        Book saved = repository.saveAndFlush(book);
+        record(saved, HistoryOperation.CREATED);
+        return saved;
     }
 
     public Book update(Long id, BookRequest request) {
@@ -56,13 +63,23 @@ public class BookService {
         book.setAuthor(request.author());
         book.setIsbn(request.isbn());
         book.setPublishedYear(request.publishedYear());
+        repository.saveAndFlush(book);
+        record(book, HistoryOperation.UPDATED);
         return book;
     }
 
     public void delete(Long id) {
-        if (!repository.existsById(id)) {
-            throw new BookNotFoundException(id);
-        }
-        repository.deleteById(id);
+        Book book = findById(id);
+        record(book, HistoryOperation.DELETED);
+        repository.delete(book);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BookHistory> findHistory(Long bookId) {
+        return historyRepository.findByBookIdOrderByChangedAtDescIdDesc(bookId);
+    }
+
+    private void record(Book book, HistoryOperation operation) {
+        historyRepository.save(BookHistory.snapshot(book, operation));
     }
 }

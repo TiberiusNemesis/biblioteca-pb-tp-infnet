@@ -42,10 +42,10 @@ export function BookForm({ editing, onSubmit, onCancelEdit, disabled }: Props) {
 
   return (
     <form className="book-form" onSubmit={submit}>
-      <h2>{editing ? `Editar livro #${editing.id}` : "Novo livro"}</h2>
+      <h2>{editing ? `Edit book #${editing.id}` : "New book"}</h2>
 
       <label>
-        Título
+        Title
         <input
           required
           value={form.title}
@@ -54,7 +54,7 @@ export function BookForm({ editing, onSubmit, onCancelEdit, disabled }: Props) {
       </label>
 
       <label>
-        Autor
+        Author
         <input
           required
           value={form.author}
@@ -73,7 +73,7 @@ export function BookForm({ editing, onSubmit, onCancelEdit, disabled }: Props) {
       </label>
 
       <label>
-        Ano de publicação
+        Publication year
         <input
           type="number"
           required
@@ -86,11 +86,11 @@ export function BookForm({ editing, onSubmit, onCancelEdit, disabled }: Props) {
 
       <div className="form-actions">
         <button type="submit" disabled={disabled}>
-          {editing ? "Salvar" : "Adicionar"}
+          {editing ? "Save" : "Add"}
         </button>
         {editing && onCancelEdit && (
           <button type="button" onClick={onCancelEdit}>
-            Cancelar
+            Cancel
           </button>
         )}
       </div>

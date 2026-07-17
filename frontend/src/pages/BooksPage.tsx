@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { booksApi } from "../api/booksApi";
 import { BookForm } from "../components/BookForm";
+import { BookHistoryPanel } from "../components/BookHistoryPanel";
 import { BookList } from "../components/BookList";
 import { ErrorBanner } from "../components/ErrorBanner";
-import type { Book, BookRequest } from "../types/Book";
+import type { Book, BookHistory, BookRequest } from "../types/Book";
 
 export function BooksPage() {
   const [books, setBooks] = useState<Book[]>([]);
   const [editing, setEditing] = useState<Book | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [historyBookId, setHistoryBookId] = useState<number | null>(null);
+  const [history, setHistory] = useState<BookHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -43,7 +47,7 @@ export function BooksPage() {
   };
 
   const handleRemove = async (id: number) => {
-    if (!confirm(`Remover o livro #${id}?`)) return;
+    if (!confirm(`Remove book #${id}?`)) return;
     setError(null);
     try {
       await booksApi.remove(id);
@@ -51,6 +55,20 @@ export function BooksPage() {
       if (editing?.id === id) setEditing(undefined);
     } catch (e) {
       setError((e as Error).message);
+    }
+  };
+
+  const handleHistory = async (id: number) => {
+    setHistoryBookId(id);
+    setHistory([]);
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      setHistory(await booksApi.history(id));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -65,7 +83,21 @@ export function BooksPage() {
         disabled={busy}
       />
 
-      <BookList books={books} onEdit={setEditing} onRemove={handleRemove} />
+      <BookList
+        books={books}
+        onHistory={handleHistory}
+        onEdit={setEditing}
+        onRemove={handleRemove}
+      />
+
+      {historyBookId !== null && (
+        <BookHistoryPanel
+          bookId={historyBookId}
+          history={history}
+          loading={historyLoading}
+          onClose={() => setHistoryBookId(null)}
+        />
+      )}
     </section>
   );
 }

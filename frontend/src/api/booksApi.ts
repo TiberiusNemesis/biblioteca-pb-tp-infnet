@@ -1,4 +1,4 @@
-import type { ApiError, Book, BookRequest } from "../types/Book";
+import type { ApiError, Book, BookHistory, BookRequest } from "../types/Book";
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8080/api";
 
@@ -33,6 +33,9 @@ export const booksApi = {
   list: () => jsonRequest<Book[]>(`${BASE}/books`),
 
   get: (id: number) => jsonRequest<Book>(`${BASE}/books/${id}`),
+
+  history: (id: number) =>
+    jsonRequest<BookHistory[]>(`${BASE}/books/${id}/history`),
 
   create: (body: BookRequest) =>
     jsonRequest<Book>(`${BASE}/books`, {

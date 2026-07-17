@@ -2,13 +2,14 @@ import type { Book } from "../types/Book";
 
 interface Props {
   books: Book[];
+  onHistory: (id: number) => void;
   onEdit: (book: Book) => void;
   onRemove: (id: number) => void;
 }
 
-export function BookList({ books, onEdit, onRemove }: Props) {
+export function BookList({ books, onHistory, onEdit, onRemove }: Props) {
   if (books.length === 0) {
-    return <p className="empty">Nenhum livro cadastrado.</p>;
+    return <p className="empty">No books registered.</p>;
   }
 
   return (
@@ -16,11 +17,11 @@ export function BookList({ books, onEdit, onRemove }: Props) {
       <thead>
         <tr>
           <th>#</th>
-          <th>Título</th>
-          <th>Autor</th>
+          <th>Title</th>
+          <th>Author</th>
           <th>ISBN</th>
-          <th>Ano</th>
-          <th aria-label="ações" />
+          <th>Year</th>
+          <th aria-label="Actions" />
         </tr>
       </thead>
       <tbody>
@@ -34,15 +35,18 @@ export function BookList({ books, onEdit, onRemove }: Props) {
             </td>
             <td>{b.publishedYear}</td>
             <td className="actions">
+              <button type="button" onClick={() => onHistory(b.id)}>
+                History
+              </button>
               <button type="button" onClick={() => onEdit(b)}>
-                Editar
+                Edit
               </button>
               <button
                 type="button"
                 className="danger"
                 onClick={() => onRemove(b.id)}
               >
-                Remover
+                Remove
               </button>
             </td>
           </tr>

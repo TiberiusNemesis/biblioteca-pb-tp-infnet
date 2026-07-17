@@ -9,7 +9,7 @@ export function ErrorBanner({ message, onDismiss }: Props) {
     <div className="error-banner" role="alert">
       <span>{message}</span>
       {onDismiss && (
-        <button type="button" onClick={onDismiss} aria-label="fechar">
+        <button type="button" onClick={onDismiss} aria-label="Close">
           ×
         </button>
       )}

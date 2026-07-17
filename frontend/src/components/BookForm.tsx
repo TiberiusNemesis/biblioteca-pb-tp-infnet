@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Book, BookRequest } from "../types/Book";
+import {
+  createBookFormState,
+  toBookRequest,
+  updatePublicationYear,
+  type BookFormState,
+} from "./bookFormState";
 
 interface Props {
   editing?: Book;
@@ -8,36 +14,27 @@ interface Props {
   disabled?: boolean;
 }
 
-const EMPTY: BookRequest = {
-  title: "",
-  author: "",
-  isbn: "",
-  publishedYear: new Date().getFullYear(),
-};
-
 export function BookForm({ editing, onSubmit, onCancelEdit, disabled }: Props) {
-  const [form, setForm] = useState<BookRequest>(EMPTY);
+  const [form, setForm] = useState<BookFormState>(() =>
+    createBookFormState(),
+  );
 
   useEffect(() => {
-    if (editing) {
-      setForm({
-        title: editing.title,
-        author: editing.author,
-        isbn: editing.isbn,
-        publishedYear: editing.publishedYear,
-      });
-    } else {
-      setForm(EMPTY);
-    }
+    setForm(createBookFormState(editing));
   }, [editing]);
 
-  const update = <K extends keyof BookRequest>(key: K, value: BookRequest[K]) =>
+  const update = <K extends keyof BookFormState>(
+    key: K,
+    value: BookFormState[K],
+  ) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(form);
-    if (!editing) setForm(EMPTY);
+    if (form.publishedYear === "") return;
+
+    onSubmit(toBookRequest(form));
+    if (!editing) setForm(createBookFormState());
   };
 
   return (
@@ -80,7 +77,11 @@ export function BookForm({ editing, onSubmit, onCancelEdit, disabled }: Props) {
           min={1450}
           max={new Date().getFullYear()}
           value={form.publishedYear}
-          onChange={(e) => update("publishedYear", Number(e.target.value))}
+          onChange={(e) =>
+            setForm((prev) =>
+              updatePublicationYear(prev, e.target.value),
+            )
+          }
         />
       </label>
 

@@ -2,6 +2,7 @@ package br.edu.infnet.biblioteca.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import br.edu.infnet.biblioteca.model.dto.BookRequest;
+import br.edu.infnet.biblioteca.repository.BookHistoryRepository;
 import br.edu.infnet.biblioteca.repository.BookRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,11 +35,15 @@ class BookControllerTest {
     @Autowired
     private BookRepository repository;
 
+    @Autowired
+    private BookHistoryRepository historyRepository;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).build();
+        historyRepository.deleteAll();
         repository.deleteAll();
     }
 
@@ -89,6 +94,13 @@ class BookControllerTest {
     }
 
     @Test
+    void historyForUnknownBookIsEmpty() throws Exception {
+        mockMvc.perform(get("/api/books/{id}/history", 9999))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
     void fullCrudFlow() throws Exception {
         BookRequest createReq = new BookRequest("DDD", "Eric Evans", "978-0-321-12521-7", 2003);
         String created = mockMvc.perform(post("/api/books")
@@ -112,6 +124,14 @@ class BookControllerTest {
 
         mockMvc.perform(delete("/api/books/{id}", id))
                 .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/books/{id}/history", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].operation").value("DELETED"))
+                .andExpect(jsonPath("$[1].operation").value("UPDATED"))
+                .andExpect(jsonPath("$[2].operation").value("CREATED"))
+                .andExpect(jsonPath("$[2].title").value("DDD"));
 
         mockMvc.perform(get("/api/books/{id}", id))
                 .andExpect(status().isNotFound());

@@ -2,6 +2,7 @@ package br.edu.infnet.biblioteca.controller;
 
 import br.edu.infnet.biblioteca.model.Book;
 import br.edu.infnet.biblioteca.model.dto.BookRequest;
+import br.edu.infnet.biblioteca.model.dto.BookHistoryResponse;
 import br.edu.infnet.biblioteca.model.dto.BookResponse;
 import br.edu.infnet.biblioteca.service.BookService;
 import jakarta.validation.Valid;
@@ -39,6 +40,13 @@ public class BookController {
     @GetMapping("/{id}")
     public BookResponse get(@PathVariable Long id) {
         return BookResponse.from(service.findById(id));
+    }
+
+    @GetMapping("/{id}/history")
+    public List<BookHistoryResponse> history(@PathVariable Long id) {
+        return service.findHistory(id).stream()
+                .map(BookHistoryResponse::from)
+                .toList();
     }
 
     @PostMapping

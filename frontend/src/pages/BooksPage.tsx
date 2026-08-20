@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { booksApi } from "../api/booksApi";
+import { loansApi } from "../api/loansApi";
 import { BookForm } from "../components/BookForm";
 import { BookHistoryPanel } from "../components/BookHistoryPanel";
 import { BookList } from "../components/BookList";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { LoanPanel } from "../components/LoanPanel";
 import type { Book, BookHistory, BookRequest } from "../types/Book";
+import type { CreateLoanRequest, Loan } from "../types/Loan";
 
 export function BooksPage() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -14,6 +17,10 @@ export function BooksPage() {
   const [historyBookId, setHistoryBookId] = useState<number | null>(null);
   const [history, setHistory] = useState<BookHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [loansLoading, setLoansLoading] = useState(false);
+  const [loanBusy, setLoanBusy] = useState(false);
+  const [borrowing, setBorrowing] = useState<Book | undefined>(undefined);
 
   const reload = useCallback(async () => {
     try {
@@ -26,6 +33,21 @@ export function BooksPage() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const reloadLoans = useCallback(async () => {
+    setLoansLoading(true);
+    try {
+      setLoans(await loansApi.list());
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoansLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadLoans();
+  }, [reloadLoans]);
 
   const handleSubmit = async (body: BookRequest) => {
     setBusy(true);
@@ -72,6 +94,36 @@ export function BooksPage() {
     }
   };
 
+  const handleCreateLoan = async (request: CreateLoanRequest) => {
+    setLoanBusy(true);
+    setError(null);
+    try {
+      const created = await loansApi.create(request);
+      setLoans((current) => [created, ...current]);
+      setBorrowing(undefined);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoanBusy(false);
+    }
+  };
+
+  const handleReturnLoan = async (id: number) => {
+    if (!confirm(`Return loan #${id}?`)) return;
+    setLoanBusy(true);
+    setError(null);
+    try {
+      const returned = await loansApi.returnLoan(id);
+      setLoans((current) =>
+        current.map((loan) => (loan.id === returned.id ? returned : loan)),
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoanBusy(false);
+    }
+  };
+
   return (
     <section className="books-page">
       <ErrorBanner message={error} onDismiss={() => setError(null)} />
@@ -85,6 +137,7 @@ export function BooksPage() {
 
       <BookList
         books={books}
+        onBorrow={setBorrowing}
         onHistory={handleHistory}
         onEdit={setEditing}
         onRemove={handleRemove}
@@ -98,6 +151,16 @@ export function BooksPage() {
           onClose={() => setHistoryBookId(null)}
         />
       )}
+
+      <LoanPanel
+        selectedBook={borrowing}
+        loans={loans}
+        loading={loansLoading}
+        busy={loanBusy}
+        onSubmit={handleCreateLoan}
+        onReturn={handleReturnLoan}
+        onCancelBorrow={() => setBorrowing(undefined)}
+      />
     </section>
   );
 }

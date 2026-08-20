@@ -2,12 +2,13 @@ import type { Book } from "../types/Book";
 
 interface Props {
   books: Book[];
+  onBorrow: (book: Book) => void;
   onHistory: (id: number) => void;
   onEdit: (book: Book) => void;
   onRemove: (id: number) => void;
 }
 
-export function BookList({ books, onHistory, onEdit, onRemove }: Props) {
+export function BookList({ books, onBorrow, onHistory, onEdit, onRemove }: Props) {
   if (books.length === 0) {
     return <p className="empty">No books registered.</p>;
   }
@@ -35,6 +36,9 @@ export function BookList({ books, onHistory, onEdit, onRemove }: Props) {
             </td>
             <td>{b.publishedYear}</td>
             <td className="actions">
+              <button type="button" onClick={() => onBorrow(b)}>
+                Borrow
+              </button>
               <button type="button" onClick={() => onHistory(b.id)}>
                 History
               </button>

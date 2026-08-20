@@ -1,9 +1,31 @@
-# Library Catalog - InfNet TP2
+# Library Catalog and Loans - InfNet TP3
 
-**Author:** Tiberius Dourado
-**Stack:** Java 21, Spring Boot 3.5, Spring Data JPA, PostgreSQL 16, Flyway, React 18, TypeScript, and Vite
+**Author:** Tiberius Dourado<br>
+**Stack:** Java 21, Spring Boot 3.5, Spring Cloud OpenFeign, Spring Data JPA, PostgreSQL 16, Flyway, React 18, TypeScript, and Vite
 
-This monolithic application manages a library catalog through a React interface and a Spring Boot REST API. TP2 replaces the original in-memory database with durable PostgreSQL persistence and adds immutable change history for every book mutation.
+This project manages a library catalog and its loans through two independently persisted Spring Boot services and one React interface. The catalog service owns book metadata and change history. The loan service owns borrowing and return records and validates books through the catalog REST API.
+
+## Architecture
+
+| Component | Responsibility | Port |
+| --- | --- | --- |
+| Catalog service | Books and immutable book history | `8080` |
+| Loan service | Loans, returns, and book availability | `8081` |
+| React frontend | Catalog and loan interface | `5173` |
+| Catalog PostgreSQL | Catalog-owned tables | `5431` |
+| Loan PostgreSQL | Loan-owned tables | `5433` |
+
+The services do not share tables or database credentials. The loan service uses a Spring Cloud OpenFeign client to call `GET /api/books/{id}` before accepting a new loan.
+
+Loan creation follows this sequence:
+
+1. The frontend sends a loan request to the loan service.
+2. Bean Validation checks the book ID, borrower name, and due date.
+3. The OpenFeign client confirms that the book exists in the catalog.
+4. The loan repository verifies that the book has no active loan.
+5. The loan service persists and returns the new loan.
+
+The catalog service remains available independently if the loan service is stopped. The loan service returns `503 Service Unavailable` when catalog validation cannot be completed.
 
 ## Requirements
 
@@ -14,37 +36,51 @@ This monolithic application manages a library catalog through a React interface 
 
 ## Start the Application
 
-### 1. Start PostgreSQL
+### 1. Start Both Databases
 
 ```bash
 docker compose up -d
 docker compose ps
 ```
 
-The Compose service exposes PostgreSQL on port `5432` and stores data in the named volume `biblioteca_data`. Removing and recreating the container does not remove catalog data. To intentionally remove all local data, run `docker compose down -v`.
+Docker Compose exposes the catalog database on `5431` and the loan database on `5433`. Both use named volumes, so data survives container recreation. To intentionally remove both databases, run `docker compose down -v`.
 
-### 2. Start the Backend
+### 2. Start the Catalog Service
 
 ```bash
 cd backend
 mvn spring-boot:run
 ```
 
-The API is available at `http://localhost:8080/api/books`.
-
-Runtime database settings can be overridden:
+The catalog API is available at `http://localhost:8080/api/books`.
 
 | Variable | Default |
 | --- | --- |
-| `DB_URL` | `jdbc:postgresql://localhost:5432/biblioteca` |
+| `DB_URL` | `jdbc:postgresql://localhost:5431/biblioteca` |
 | `DB_USERNAME` | `biblioteca` |
 | `DB_PASSWORD` | `biblioteca` |
 
-Flyway applies versioned migrations before JPA starts. Hibernate uses `ddl-auto: validate`, so the application verifies mappings but never changes the production schema implicitly.
-
-### 3. Start the Frontend
+### 3. Start the Loan Service
 
 In a second terminal:
+
+```bash
+cd loan-service
+mvn spring-boot:run
+```
+
+The loan API is available at `http://localhost:8081/api/loans`.
+
+| Variable | Default |
+| --- | --- |
+| `LOAN_DB_URL` | `jdbc:postgresql://localhost:5433/loans` |
+| `LOAN_DB_USERNAME` | `loans` |
+| `LOAN_DB_PASSWORD` | `loans` |
+| `CATALOG_URL` | `http://localhost:8080` |
+
+### 4. Start the Frontend
+
+In a third terminal:
 
 ```bash
 cd frontend
@@ -52,73 +88,40 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. Set `VITE_API_URL` if the API is hosted elsewhere; its default is `http://localhost:8080/api`.
+Open `http://localhost:5173`. `VITE_API_URL` defaults to `http://localhost:8080/api`, and `VITE_LOAN_API_URL` defaults to `http://localhost:8081/api`.
 
-## Persistence Design
+## Domain Model
 
-### `books`
+### Catalog Domain
 
-The current catalog state contains:
+The catalog stores the current state of each book and immutable snapshots for `CREATED`, `UPDATED`, and `DELETED` operations. ISBN values are unique, and optimistic locking protects concurrent updates.
 
-- Generated primary key
-- Required title, author, ISBN, and publication year
-- Unique ISBN constraint
-- Optimistic-lock `version`
-- UTC `created_at` and `updated_at` timestamps
+### Loan Domain
 
-### `book_history`
+A loan contains:
 
-Each successful mutation stores an immutable snapshot containing:
+- Generated identifier
+- Catalog book identifier
+- Borrower name
+- UTC borrowing timestamp
+- Due date
+- Optional UTC return timestamp
+- Status: `ACTIVE` or `RETURNED`
 
-- Original book ID without a foreign key, so deletion history survives
-- Operation: `CREATED`, `UPDATED`, or `DELETED`
-- Title, author, ISBN, and publication year at that moment
-- Book version and UTC change timestamp
+Only one active loan may exist for a book. A PostgreSQL partial unique index reinforces this rule at the persistence boundary. Returning a loan changes its status and records the return timestamp in one transaction.
 
-The `(book_id, changed_at, id)` index supports deterministic newest-first history queries.
-
-## Transaction Semantics
-
-`BookService` owns one transaction for each use case:
-
-1. Create or update flushes the book so its ID and version are available.
-2. The service writes the corresponding history snapshot.
-3. Delete writes the final snapshot before removing the current row.
-4. Any exception rolls back both the catalog mutation and its history record.
-
-Duplicate ISBN and missing-book validation occurs before history is written.
-
-## Spring Data Repositories
-
-The current-state repository uses derived Spring Data queries:
-
-```java
-public interface BookRepository extends JpaRepository<Book, Long> {
-    Optional<Book> findByIsbn(String isbn);
-    boolean existsByIsbn(String isbn);
-}
-```
-
-History is returned newest first with a stable ID tie-breaker:
-
-```java
-public interface BookHistoryRepository extends JpaRepository<BookHistory, Long> {
-    List<BookHistory> findByBookIdOrderByChangedAtDescIdDesc(Long bookId);
-}
-```
-
-## REST API
+## Catalog REST API
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/books` | List current books |
 | `GET` | `/api/books/{id}` | Get one current book |
-| `POST` | `/api/books` | Create a book and a `CREATED` snapshot |
-| `PUT` | `/api/books/{id}` | Update a book and add an `UPDATED` snapshot |
-| `DELETE` | `/api/books/{id}` | Add a `DELETED` snapshot and remove the book |
+| `POST` | `/api/books` | Create a book and history snapshot |
+| `PUT` | `/api/books/{id}` | Update a book and add a history snapshot |
+| `DELETE` | `/api/books/{id}` | Store a final snapshot and remove the book |
 | `GET` | `/api/books/{id}/history` | List immutable snapshots newest first |
 
-Create or update request:
+Book request:
 
 ```json
 {
@@ -129,64 +132,77 @@ Create or update request:
 }
 ```
 
-Book response persistence metadata:
+## Loan REST API
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/loans` | List loans newest first |
+| `GET` | `/api/loans/{id}` | Get one loan |
+| `POST` | `/api/loans` | Borrow an existing, available book |
+| `PATCH` | `/api/loans/{id}/return` | Return an active loan |
+
+Create-loan request:
+
+```json
+{
+  "bookId": 1,
+  "borrowerName": "Maria Silva",
+  "dueDate": "2026-09-02"
+}
+```
+
+Loan response:
 
 ```json
 {
   "id": 1,
-  "title": "Clean Code",
-  "author": "Robert C. Martin",
-  "isbn": "978-0-13-235088-4",
-  "publishedYear": 2008,
-  "version": 0,
-  "createdAt": "2026-07-17T20:00:00Z",
-  "updatedAt": "2026-07-17T20:00:00Z"
+  "bookId": 1,
+  "borrowerName": "Maria Silva",
+  "borrowedAt": "2026-08-19T12:00:00Z",
+  "dueDate": "2026-09-02",
+  "returnedAt": null,
+  "status": "ACTIVE"
 }
 ```
 
-History response:
+## Error Handling
 
-```json
-[
-  {
-    "id": 3,
-    "bookId": 1,
-    "operation": "DELETED",
-    "title": "Clean Code, Second Edition",
-    "author": "Robert C. Martin",
-    "isbn": "978-0-13-235088-4",
-    "publishedYear": 2008,
-    "bookVersion": 1,
-    "changedAt": "2026-07-17T20:10:00Z"
-  }
-]
-```
+Both services return structured error bodies with a timestamp, stable error code, and message. Validation errors also contain field details.
 
-A history query for an ID with no records returns `200 OK` with an empty array.
+The loan service uses these main responses:
 
-## Database Migrations
+- `400 Bad Request` for invalid input
+- `404 Not Found` for missing loans or catalog books
+- `409 Conflict` for an active loan on the same book or a repeated return
+- `503 Service Unavailable` when the catalog service cannot be reached
 
-- `V1__create_library_schema.sql` creates current-state and history tables, constraints, and indexes.
-- `V2__seed_books.sql` inserts four sample catalog entries.
+## Persistence
 
-Never edit a migration that has already been applied. Add a new numbered migration for future schema changes.
+Flyway owns the production schemas. Hibernate runs with `ddl-auto: validate`, so it verifies entity mappings without altering PostgreSQL tables.
+
+- `backend/src/main/resources/db/migration` contains catalog migrations.
+- `loan-service/src/main/resources/db/migration` contains the independent loan migration.
+- Catalog and loan repositories extend `JpaRepository` and remain scoped to their respective services.
 
 ## Automated Verification
 
-Backend tests use isolated, test-scoped H2 in PostgreSQL compatibility mode. They cover JPA metadata, unique ISBN enforcement, optimistic version increments, history ordering, transactional service behavior, validation errors, and the full CRUD/history API flow.
+Catalog tests:
 
 ```bash
-cd backend
-mvn clean test
+mvn -f backend/pom.xml clean test
 ```
 
-Expected result for this submission: **18 tests, 0 failures, 0 errors**.
-
-Frontend verification:
+Loan-service tests:
 
 ```bash
-cd frontend
-npm run build
+mvn -f loan-service/pom.xml clean test
+```
+
+Frontend tests and production build:
+
+```bash
+npm --prefix frontend test
+npm --prefix frontend run build
 ```
 
 Compose validation:
@@ -195,26 +211,34 @@ Compose validation:
 docker compose config --quiet
 ```
 
+The test suites cover repositories, catalog communication, loan business rules, validation, REST error mappings, catalog CRUD/history behavior, and frontend form state.
+
+## Demonstration Scenario
+
+1. Start both databases, both backend services, and the frontend.
+2. Open the frontend and confirm the seeded catalog is displayed.
+3. Select **Borrow** for a book, enter a borrower, choose a future date, and confirm.
+4. Confirm the loan appears with `ACTIVE` status.
+5. Attempt to borrow the same book again and observe the conflict response.
+6. Return the loan and confirm its status changes to `RETURNED`.
+7. Borrow the same book again to demonstrate that returned loans do not block new circulation.
+8. Stop the catalog service and attempt a new loan to demonstrate the `503` integration response.
+
 ## Project Structure
 
 ```text
 .
-├── docker-compose.yml
 ├── backend
 │   └── src
 │       ├── main
-│       │   ├── java/br/edu/infnet/biblioteca
-│       │   │   ├── controller
-│       │   │   ├── model
-│       │   │   ├── repository
-│       │   │   └── service
-│       │   └── resources/db/migration
+│       └── test
+├── loan-service
+│   └── src
+│       ├── main
 │       └── test
 ├── frontend
-│   └── src
-│       ├── api
-│       ├── components
-│       ├── pages
-│       └── types
-└── docs
+│   ├── src
+│   └── test
+├── docker-compose.yml
+└── README.md
 ```

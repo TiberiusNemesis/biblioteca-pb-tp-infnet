@@ -1,12 +1,12 @@
 spring:
   application:
-    name: biblioteca
+    name: loan-service
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5431/biblioteca}
+    url: ${LOAN_DB_URL:jdbc:postgresql://localhost:5433/loans}
     driver-class-name: org.postgresql.Driver
-    username: ${DB_USERNAME:biblioteca}
-    password: ${DB_PASSWORD:biblioteca}
+    username: ${LOAN_DB_USERNAME:loans}
+    password: ${LOAN_DB_PASSWORD:loans}
 
   flyway:
     enabled: true
@@ -17,9 +17,9 @@ spring:
       ddl-auto: validate
     open-in-view: false
     show-sql: false
-    properties:
-      hibernate:
-        format_sql: true
 
 server:
-  port: 8080
+  port: 8081
+
+catalog:
+  base-url: ${CATALOG_URL:http://localhost:8080}

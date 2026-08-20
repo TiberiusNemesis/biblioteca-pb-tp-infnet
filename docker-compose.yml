@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: biblioteca
       POSTGRES_PASSWORD: biblioteca
     ports:
-      - "5432:5432"
+      - "5431:5432"
     volumes:
       - biblioteca_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,5 +15,22 @@ services:
       timeout: 5s
       retries: 10
 
+  loans-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: loans
+      POSTGRES_USER: loans
+      POSTGRES_PASSWORD: loans
+    ports:
+      - "5433:5432"
+    volumes:
+      - loans_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loans -d loans"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   biblioteca_data:
+  loans_data:

@@ -193,6 +193,97 @@ button.danger:hover:not(:disabled) {
   box-shadow: var(--shadow);
 }
 
+.loan-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 1rem;
+}
+
+.loan-header h2,
+.loan-form h3 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.loan-header p,
+.loan-meta {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.loan-form {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.loan-form label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.loan-form input {
+  font-size: 1rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.loans-table-wrapper {
+  overflow-x: auto;
+}
+
+.loans-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.loans-table th,
+.loans-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.loans-table th {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.loans-table .actions {
+  text-align: right;
+}
+
+.loan-status {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.loan-status.active {
+  background: #e8f1ff;
+  color: #174ea6;
+}
+
+.loan-status.returned {
+  background: #e7f6ec;
+  color: #1f6b3a;
+}
+
 .history-header,
 .history-entry-heading {
   display: flex;
@@ -244,5 +335,9 @@ button.danger:hover:not(:disabled) {
   .books-table {
     display: block;
     overflow-x: auto;
+  }
+
+  .loan-form {
+    padding: 0.8rem;
   }
 }

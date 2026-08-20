@@ -5,7 +5,7 @@ export function App() {
     <div className="app-shell">
       <header className="app-header">
         <h1>Library</h1>
-        <p className="tagline">Library catalog — InfNet TP2</p>
+        <p className="tagline">Library catalog and loans — InfNet TP3</p>
       </header>
       <main>
         <BooksPage />

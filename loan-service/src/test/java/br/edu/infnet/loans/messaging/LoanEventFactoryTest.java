@@ -26,10 +26,12 @@ class LoanEventFactoryTest {
         assertThat(event.getEventType()).isEqualTo("LoanCreated");
         assertThat(event.getRoutingKey()).isEqualTo("library.loans.loan.created.v1");
         assertThat(json.path("eventVersion").asInt()).isEqualTo(1);
+        assertThat(json.path("occurredAt").isTextual()).isTrue();
         assertThat(json.path("source").asText()).isEqualTo("loan-service");
         assertThat(json.path("payload").path("id").asLong()).isEqualTo(41L);
         assertThat(json.path("payload").path("bookId").asLong()).isEqualTo(7L);
         assertThat(json.path("payload").path("borrowerName").asText()).isEqualTo("Maria Silva");
+        assertThat(json.path("payload").path("returnedAt").isNull()).isTrue();
         assertThat(json.path("payload").path("status").asText()).isEqualTo("ACTIVE");
     }
 

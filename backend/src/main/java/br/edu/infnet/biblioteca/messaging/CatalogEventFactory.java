@@ -4,6 +4,7 @@ import br.edu.infnet.biblioteca.messaging.outbox.OutboxEvent;
 import br.edu.infnet.biblioteca.model.Book;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -17,7 +18,8 @@ public class CatalogEventFactory {
     private final ObjectMapper objectMapper;
 
     public CatalogEventFactory(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper.copy()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     }
 
     public OutboxEvent bookCreated(Book book) {

@@ -34,6 +34,7 @@ public class LoanEventFactory {
                         loan.getBorrowerName(),
                         loan.getBorrowedAt(),
                         loan.getDueDate(),
+                        loan.getReturnedAt(),
                         loan.getStatus().name()
                 )
         );
@@ -81,6 +82,7 @@ public class LoanEventFactory {
             String borrowerName,
             Instant borrowedAt,
             LocalDate dueDate,
+            Instant returnedAt,
             String status
     ) {
     }

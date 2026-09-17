@@ -23,6 +23,7 @@ class CatalogEventFactoryTest {
         assertThat(event.getEventType()).isEqualTo("BookCreated");
         assertThat(event.getRoutingKey()).isEqualTo("library.catalog.book.created.v1");
         assertThat(json.path("eventVersion").asInt()).isEqualTo(1);
+        assertThat(json.path("occurredAt").isTextual()).isTrue();
         assertThat(json.path("source").asText()).isEqualTo("catalog-service");
         assertThat(json.path("payload").path("id").asLong()).isEqualTo(7L);
         assertThat(json.path("payload").path("title").asText()).isEqualTo("Clean Code");

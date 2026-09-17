@@ -35,9 +35,6 @@ spring:
 server:
   port: 8081
 
-catalog:
-  base-url: ${CATALOG_URL:http://localhost:8080}
-
 library:
   messaging:
     exchange: library.events

@@ -1,20 +1,16 @@
 package br.edu.infnet.loans.service;
 
-import br.edu.infnet.loans.client.CatalogBookResponse;
-import br.edu.infnet.loans.client.CatalogClient;
 import br.edu.infnet.loans.dto.CreateLoanRequest;
 import br.edu.infnet.loans.dto.LoanResponse;
 import br.edu.infnet.loans.exception.ActiveLoanExistsException;
 import br.edu.infnet.loans.exception.CatalogBookNotFoundException;
-import br.edu.infnet.loans.exception.CatalogUnavailableException;
 import br.edu.infnet.loans.exception.LoanAlreadyReturnedException;
 import br.edu.infnet.loans.exception.LoanNotFoundException;
 import br.edu.infnet.loans.model.Loan;
 import br.edu.infnet.loans.model.LoanStatus;
 import br.edu.infnet.loans.repository.LoanRepository;
-import feign.FeignException;
-import feign.Request;
-import feign.Response;
+import br.edu.infnet.loans.projection.CatalogBookProjection;
+import br.edu.infnet.loans.projection.CatalogProjectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,13 +18,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,14 +39,14 @@ class LoanServiceTest {
     private LoanRepository repository;
 
     @Mock
-    private CatalogClient catalogClient;
+    private CatalogProjectionService catalogProjectionService;
 
     private LoanService service;
 
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        service = new LoanService(repository, catalogClient, clock);
+        service = new LoanService(repository, catalogProjectionService, clock);
     }
 
     @Test
@@ -62,7 +56,9 @@ class LoanServiceTest {
                 "  Maria Silva  ",
                 LocalDate.parse("2026-09-02")
         );
-        when(catalogClient.getBook(7L)).thenReturn(catalogBook(7L));
+        CatalogBookProjection projection = mockProjection();
+        when(catalogProjectionService.requireAvailableBook(7L))
+                .thenReturn(projection);
         when(repository.existsByBookIdAndStatus(7L, LoanStatus.ACTIVE)).thenReturn(false);
         when(repository.save(any(Loan.class))).thenAnswer(invocation -> {
             Loan loan = invocation.getArgument(0);
@@ -83,25 +79,19 @@ class LoanServiceTest {
 
     @Test
     void rejectsALoanWhenTheCatalogBookDoesNotExist() {
-        when(catalogClient.getBook(99L)).thenThrow(feignFailure(404));
+        when(catalogProjectionService.requireAvailableBook(99L))
+                .thenThrow(new CatalogBookNotFoundException(99L));
 
         assertThatThrownBy(() -> service.create(requestFor(99L)))
                 .isInstanceOf(CatalogBookNotFoundException.class)
-                .hasMessage("Book 99 was not found in the catalog");
-    }
-
-    @Test
-    void reportsCatalogOutagesWithoutCreatingALoan() {
-        when(catalogClient.getBook(7L)).thenThrow(feignFailure(503));
-
-        assertThatThrownBy(() -> service.create(requestFor(7L)))
-                .isInstanceOf(CatalogUnavailableException.class)
-                .hasMessage("Catalog service is unavailable");
+                .hasMessage("Book 99 is not available in the local catalog projection");
     }
 
     @Test
     void rejectsASecondActiveLoanForTheSameBook() {
-        when(catalogClient.getBook(7L)).thenReturn(catalogBook(7L));
+        CatalogBookProjection projection = mockProjection();
+        when(catalogProjectionService.requireAvailableBook(7L))
+                .thenReturn(projection);
         when(repository.existsByBookIdAndStatus(7L, LoanStatus.ACTIVE)).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(requestFor(7L)))
@@ -159,17 +149,8 @@ class LoanServiceTest {
         return new CreateLoanRequest(bookId, "Maria Silva", LocalDate.parse("2026-09-02"));
     }
 
-    private static CatalogBookResponse catalogBook(Long id) {
-        return new CatalogBookResponse(
-                id,
-                "Clean Code",
-                "Robert C. Martin",
-                "978-0-13-235088-4",
-                2008,
-                0L,
-                Instant.parse("2026-08-01T10:00:00Z"),
-                Instant.parse("2026-08-01T10:00:00Z")
-        );
+    private static CatalogBookProjection mockProjection() {
+        return org.mockito.Mockito.mock(CatalogBookProjection.class);
     }
 
     private static Loan savedLoan(Long id, LoanStatus status) {
@@ -186,21 +167,4 @@ class LoanServiceTest {
         return loan;
     }
 
-    private static FeignException feignFailure(int status) {
-        Request request = Request.create(
-                Request.HttpMethod.GET,
-                "/api/books/7",
-                Map.of(),
-                null,
-                StandardCharsets.UTF_8,
-                null
-        );
-        Response response = Response.builder()
-                .status(status)
-                .reason("Catalog response")
-                .request(request)
-                .headers(Map.of())
-                .build();
-        return FeignException.errorStatus("CatalogClient#getBook", response);
-    }
 }

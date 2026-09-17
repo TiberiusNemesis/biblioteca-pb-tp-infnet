@@ -5,7 +5,6 @@ import br.edu.infnet.loans.dto.CreateLoanRequest;
 import br.edu.infnet.loans.dto.LoanResponse;
 import br.edu.infnet.loans.exception.ActiveLoanExistsException;
 import br.edu.infnet.loans.exception.CatalogBookNotFoundException;
-import br.edu.infnet.loans.exception.CatalogUnavailableException;
 import br.edu.infnet.loans.exception.LoanAlreadyReturnedException;
 import br.edu.infnet.loans.exception.LoanNotFoundException;
 import br.edu.infnet.loans.model.LoanStatus;
@@ -139,18 +138,6 @@ class LoanControllerTest {
         mockMvc.perform(patch("/api/loans/{id}/return", 41))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error").value("loan_already_returned"));
-    }
-
-    @Test
-    void mapsCatalogOutagesToServiceUnavailable() throws Exception {
-        CreateLoanRequest request = new CreateLoanRequest(7L, "Maria Silva", LocalDate.parse("2100-01-15"));
-        when(service.create(request)).thenThrow(new CatalogUnavailableException());
-
-        mockMvc.perform(post("/api/loans")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("catalog_unavailable"));
     }
 
     private static LoanResponse response(Long id, LoanStatus status) {

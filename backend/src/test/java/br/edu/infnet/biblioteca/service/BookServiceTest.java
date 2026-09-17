@@ -6,6 +6,7 @@ import br.edu.infnet.biblioteca.model.HistoryOperation;
 import br.edu.infnet.biblioteca.model.dto.BookRequest;
 import br.edu.infnet.biblioteca.model.exception.BookNotFoundException;
 import br.edu.infnet.biblioteca.model.exception.DuplicateIsbnException;
+import br.edu.infnet.biblioteca.messaging.CatalogEventRecorder;
 import br.edu.infnet.biblioteca.repository.BookHistoryRepository;
 import br.edu.infnet.biblioteca.repository.BookRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,13 +29,15 @@ class BookServiceTest {
 
     private BookRepository repository;
     private BookHistoryRepository historyRepository;
+    private CatalogEventRecorder eventRecorder;
     private BookService service;
 
     @BeforeEach
     void setUp() {
         repository = mock(BookRepository.class);
         historyRepository = mock(BookHistoryRepository.class);
-        service = new BookService(repository, historyRepository);
+        eventRecorder = mock(CatalogEventRecorder.class);
+        service = new BookService(repository, historyRepository, eventRecorder);
     }
 
     @Test
@@ -49,6 +52,7 @@ class BookServiceTest {
         assertThat(saved.getTitle()).isEqualTo("DDD");
         verify(repository).saveAndFlush(any(Book.class));
         assertRecordedOperation(HistoryOperation.CREATED);
+        verify(eventRecorder).bookCreated(saved);
     }
 
     @Test
@@ -62,6 +66,7 @@ class BookServiceTest {
 
         verify(repository, never()).saveAndFlush(any(Book.class));
         verify(historyRepository, never()).save(any(BookHistory.class));
+        verify(eventRecorder, never()).bookCreated(any(Book.class));
     }
 
     @Test
@@ -87,6 +92,7 @@ class BookServiceTest {
         assertThat(updated.getAuthor()).isEqualTo("New Author");
         assertThat(updated.getPublishedYear()).isEqualTo(2010);
         assertRecordedOperation(HistoryOperation.UPDATED);
+        verify(eventRecorder).bookUpdated(existing);
     }
 
     @Test
@@ -102,6 +108,7 @@ class BookServiceTest {
                 .isInstanceOf(DuplicateIsbnException.class);
 
         verify(historyRepository, never()).save(any(BookHistory.class));
+        verify(eventRecorder, never()).bookUpdated(any(Book.class));
     }
 
     @Test
@@ -113,6 +120,7 @@ class BookServiceTest {
         service.delete(1L);
 
         assertRecordedOperation(HistoryOperation.DELETED);
+        verify(eventRecorder).bookDeleted(existing);
         verify(repository).delete(existing);
     }
 
@@ -126,6 +134,7 @@ class BookServiceTest {
 
         verify(repository, never()).delete(any(Book.class));
         verify(historyRepository, never()).save(any(BookHistory.class));
+        verify(eventRecorder, never()).bookDeleted(any(Book.class));
     }
 
     @Test

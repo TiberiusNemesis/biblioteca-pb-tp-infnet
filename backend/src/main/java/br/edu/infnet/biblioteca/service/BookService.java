@@ -8,6 +8,7 @@ import br.edu.infnet.biblioteca.model.exception.BookNotFoundException;
 import br.edu.infnet.biblioteca.model.exception.DuplicateIsbnException;
 import br.edu.infnet.biblioteca.repository.BookHistoryRepository;
 import br.edu.infnet.biblioteca.repository.BookRepository;
+import br.edu.infnet.biblioteca.messaging.CatalogEventRecorder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,10 +20,16 @@ public class BookService {
 
     private final BookRepository repository;
     private final BookHistoryRepository historyRepository;
+    private final CatalogEventRecorder eventRecorder;
 
-    public BookService(BookRepository repository, BookHistoryRepository historyRepository) {
+    public BookService(
+            BookRepository repository,
+            BookHistoryRepository historyRepository,
+            CatalogEventRecorder eventRecorder
+    ) {
         this.repository = repository;
         this.historyRepository = historyRepository;
+        this.eventRecorder = eventRecorder;
     }
 
     @Transactional(readOnly = true)
@@ -48,6 +55,7 @@ public class BookService {
         );
         Book saved = repository.saveAndFlush(book);
         record(saved, HistoryOperation.CREATED);
+        eventRecorder.bookCreated(saved);
         return saved;
     }
 
@@ -65,12 +73,14 @@ public class BookService {
         book.setPublishedYear(request.publishedYear());
         repository.saveAndFlush(book);
         record(book, HistoryOperation.UPDATED);
+        eventRecorder.bookUpdated(book);
         return book;
     }
 
     public void delete(Long id) {
         Book book = findById(id);
         record(book, HistoryOperation.DELETED);
+        eventRecorder.bookDeleted(book);
         repository.delete(book);
     }
 

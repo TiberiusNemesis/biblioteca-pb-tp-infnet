@@ -18,8 +18,34 @@ spring:
     open-in-view: false
     show-sql: false
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:biblioteca}
+    password: ${RABBITMQ_PASSWORD:biblioteca}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+
 server:
   port: 8081
 
 catalog:
   base-url: ${CATALOG_URL:http://localhost:8080}
+
+library:
+  messaging:
+    exchange: library.events
+    catalog-events-queue: library.loan-service.catalog-events.v1
+    dead-letter-exchange: library.loan-service.dlx
+    dead-letter-queue: library.loan-service.catalog-events.dlq
+    outbox:
+      enabled: ${OUTBOX_ENABLED:true}
+      fixed-delay: ${OUTBOX_FIXED_DELAY:1000}
+      batch-size: ${OUTBOX_BATCH_SIZE:50}
+      confirm-timeout: ${OUTBOX_CONFIRM_TIMEOUT:5s}

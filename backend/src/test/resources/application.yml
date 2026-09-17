@@ -14,3 +14,12 @@ spring:
   sql:
     init:
       mode: never
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+library:
+  messaging:
+    outbox:
+      enabled: false

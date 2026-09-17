@@ -14,6 +14,15 @@ spring:
   cloud:
     compatibility-verifier:
       enabled: false
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+library:
+  messaging:
+    outbox:
+      enabled: false
 
 catalog:
   base-url: http://localhost:8080

@@ -21,5 +21,7 @@ spring:
 
 library:
   messaging:
+    exchange: library.events
     outbox:
       enabled: false
+      confirm-timeout: 1s

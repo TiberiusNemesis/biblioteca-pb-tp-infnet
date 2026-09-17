@@ -26,7 +26,7 @@ spring:
     publisher-confirm-type: correlated
     publisher-returns: true
     template:
-      mandatory: true
+      mandatory: false
     listener:
       simple:
         acknowledge-mode: auto

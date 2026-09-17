@@ -128,7 +128,9 @@ The durable topic exchange is `library.events`. The durable queue
 - **Transactional outbox:** domain mutations and outgoing messages commit in one
   PostgreSQL transaction.
 - **Publisher confirms:** an outbox row is marked published only after a positive
-  RabbitMQ confirmation and successful routing.
+  RabbitMQ confirmation. Catalog events additionally require a successful route
+  to the projection queue. Loan-event queues remain owned by future consumers,
+  so their producer requires exchange confirmation without mandatory routing.
 - **Automatic recovery:** a broker failure leaves the row pending for the next
   scheduled publication cycle.
 - **Idempotent consumer:** `processed_events.event_id` prevents duplicate effects.

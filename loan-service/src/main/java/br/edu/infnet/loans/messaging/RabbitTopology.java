@@ -17,9 +17,11 @@ import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
 @EnableRabbit
+@EnableScheduling
 public class RabbitTopology {
 
     private static final String CATALOG_ROUTING_PATTERN = "library.catalog.book.*.v1";

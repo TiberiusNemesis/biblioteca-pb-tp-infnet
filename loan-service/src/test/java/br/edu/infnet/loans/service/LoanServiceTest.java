@@ -6,6 +6,7 @@ import br.edu.infnet.loans.exception.ActiveLoanExistsException;
 import br.edu.infnet.loans.exception.CatalogBookNotFoundException;
 import br.edu.infnet.loans.exception.LoanAlreadyReturnedException;
 import br.edu.infnet.loans.exception.LoanNotFoundException;
+import br.edu.infnet.loans.messaging.LoanEventRecorder;
 import br.edu.infnet.loans.model.Loan;
 import br.edu.infnet.loans.model.LoanStatus;
 import br.edu.infnet.loans.repository.LoanRepository;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class LoanServiceTest {
@@ -41,12 +43,15 @@ class LoanServiceTest {
     @Mock
     private CatalogProjectionService catalogProjectionService;
 
+    @Mock
+    private LoanEventRecorder eventRecorder;
+
     private LoanService service;
 
     @BeforeEach
     void setUp() {
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        service = new LoanService(repository, catalogProjectionService, clock);
+        service = new LoanService(repository, catalogProjectionService, eventRecorder, clock);
     }
 
     @Test
@@ -75,6 +80,7 @@ class LoanServiceTest {
         assertThat(response.dueDate()).isEqualTo(LocalDate.parse("2026-09-02"));
         assertThat(response.returnedAt()).isNull();
         assertThat(response.status()).isEqualTo(LoanStatus.ACTIVE);
+        verify(eventRecorder).loanCreated(any(Loan.class));
     }
 
     @Test
@@ -108,6 +114,7 @@ class LoanServiceTest {
 
         assertThat(response.status()).isEqualTo(LoanStatus.RETURNED);
         assertThat(response.returnedAt()).isEqualTo(NOW);
+        verify(eventRecorder).loanReturned(active);
     }
 
     @Test

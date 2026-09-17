@@ -5,6 +5,7 @@ import br.edu.infnet.loans.dto.LoanResponse;
 import br.edu.infnet.loans.exception.ActiveLoanExistsException;
 import br.edu.infnet.loans.exception.LoanAlreadyReturnedException;
 import br.edu.infnet.loans.exception.LoanNotFoundException;
+import br.edu.infnet.loans.messaging.LoanEventRecorder;
 import br.edu.infnet.loans.model.Loan;
 import br.edu.infnet.loans.model.LoanStatus;
 import br.edu.infnet.loans.projection.CatalogProjectionService;
@@ -20,15 +21,18 @@ public class LoanService {
 
     private final LoanRepository repository;
     private final CatalogProjectionService catalogProjectionService;
+    private final LoanEventRecorder eventRecorder;
     private final Clock clock;
 
     public LoanService(
             LoanRepository repository,
             CatalogProjectionService catalogProjectionService,
+            LoanEventRecorder eventRecorder,
             Clock clock
     ) {
         this.repository = repository;
         this.catalogProjectionService = catalogProjectionService;
+        this.eventRecorder = eventRecorder;
         this.clock = clock;
     }
 
@@ -58,7 +62,9 @@ public class LoanService {
                 clock.instant(),
                 request.dueDate()
         );
-        return LoanResponse.from(repository.save(loan));
+        Loan saved = repository.save(loan);
+        eventRecorder.loanCreated(saved);
+        return LoanResponse.from(saved);
     }
 
     @Transactional
@@ -69,6 +75,7 @@ public class LoanService {
         }
 
         loan.markReturned(clock.instant());
+        eventRecorder.loanReturned(loan);
         return LoanResponse.from(loan);
     }
 

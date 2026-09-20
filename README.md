@@ -57,9 +57,6 @@ The services do not share tables, entities, or database credentials. OpenFeign
 is no longer used. `LoanService` reads `catalog_book_projection`, which is owned
 and updated locally by the loan service.
 
-The complete design, trade-offs, contracts, and diagrams are documented in
-[`docs/event-driven-architecture.md`](docs/event-driven-architecture.md).
-
 ## Event Flow
 
 ```mermaid
@@ -359,9 +356,6 @@ can archive old published records without touching pending ones.
 │   └── src
 ├── frontend
 │   └── src
-├── docs
-│   ├── event-driven-architecture.md
-│   └── event-driven-implementation-plan.md
 ├── docker-compose.yml
 └── README.md
 ```

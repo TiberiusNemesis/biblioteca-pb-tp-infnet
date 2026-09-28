@@ -14,3 +14,14 @@ spring:
   sql:
     init:
       mode: never
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+library:
+  messaging:
+    exchange: library.events
+    outbox:
+      enabled: false
+      confirm-timeout: 1s

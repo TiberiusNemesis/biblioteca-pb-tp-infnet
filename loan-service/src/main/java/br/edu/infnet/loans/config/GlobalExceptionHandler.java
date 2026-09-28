@@ -2,7 +2,6 @@ package br.edu.infnet.loans.config;
 
 import br.edu.infnet.loans.exception.ActiveLoanExistsException;
 import br.edu.infnet.loans.exception.CatalogBookNotFoundException;
-import br.edu.infnet.loans.exception.CatalogUnavailableException;
 import br.edu.infnet.loans.exception.LoanAlreadyReturnedException;
 import br.edu.infnet.loans.exception.LoanNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -37,11 +36,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(LoanAlreadyReturnedException.class)
     public ResponseEntity<Map<String, Object>> handleAlreadyReturned(LoanAlreadyReturnedException ex) {
         return response(HttpStatus.CONFLICT, "loan_already_returned", ex.getMessage());
-    }
-
-    @ExceptionHandler(CatalogUnavailableException.class)
-    public ResponseEntity<Map<String, Object>> handleCatalogUnavailable(CatalogUnavailableException ex) {
-        return response(HttpStatus.SERVICE_UNAVAILABLE, "catalog_unavailable", ex.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

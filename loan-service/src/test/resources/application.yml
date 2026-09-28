@@ -11,9 +11,17 @@ spring:
       ddl-auto: create-drop
     open-in-view: false
     show-sql: false
-  cloud:
-    compatibility-verifier:
-      enabled: false
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
 
-catalog:
-  base-url: http://localhost:8080
+library:
+  messaging:
+    exchange: library.events
+    catalog-events-queue: library.loan-service.catalog-events.v1
+    dead-letter-exchange: library.loan-service.dlx
+    dead-letter-queue: library.loan-service.catalog-events.dlq
+    outbox:
+      enabled: false
+      confirm-timeout: 1s

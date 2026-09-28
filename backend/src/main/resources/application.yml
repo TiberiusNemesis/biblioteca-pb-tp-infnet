@@ -21,5 +21,28 @@ spring:
       hibernate:
         format_sql: true
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:biblioteca}
+    password: ${RABBITMQ_PASSWORD:biblioteca}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+
 server:
   port: 8080
+
+library:
+  messaging:
+    exchange: library.events
+    outbox:
+      enabled: ${OUTBOX_ENABLED:true}
+      fixed-delay: ${OUTBOX_FIXED_DELAY:1000}
+      batch-size: ${OUTBOX_BATCH_SIZE:50}
+      confirm-timeout: ${OUTBOX_CONFIRM_TIMEOUT:5s}

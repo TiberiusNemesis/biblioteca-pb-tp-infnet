@@ -368,8 +368,8 @@ In a third terminal:
 
 ```bash
 cd frontend
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open `http://localhost:5173`. `VITE_API_URL` defaults to
@@ -419,9 +419,9 @@ mvn -f loan-service/pom.xml test
 Frontend tests and production build:
 
 ```bash
-npm --prefix frontend ci
-npm --prefix frontend test
-npm --prefix frontend run build
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend test
+pnpm --dir frontend build
 ```
 
 Deployment configuration validation:

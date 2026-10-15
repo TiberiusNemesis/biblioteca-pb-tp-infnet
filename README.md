@@ -232,7 +232,7 @@ kind create cluster --name biblioteca --config k8s/kind-config.yaml
 Build and load the application images:
 
 ```bash
-docker build -t biblioteca/catalog:local backend
+docker build -t biblioteca/catalog:local catalog-service
 docker build -t biblioteca/loan:local loan-service
 docker build -t biblioteca/frontend:local frontend
 kind load docker-image --name biblioteca \
@@ -280,7 +280,7 @@ After source changes, rebuild and reload the images, then restart the applicatio
 deployments:
 
 ```bash
-docker build -t biblioteca/catalog:local backend
+docker build -t biblioteca/catalog:local catalog-service
 docker build -t biblioteca/loan:local loan-service
 docker build -t biblioteca/frontend:local frontend
 kind load docker-image --name biblioteca \
@@ -313,7 +313,7 @@ volumes and start with empty infrastructure, run `docker compose down -v`.
 ### 2. Start the Catalog Service
 
 ```bash
-cd backend
+cd catalog-service
 mvn spring-boot:run
 ```
 
@@ -407,7 +407,7 @@ active loan returns `409`.
 Run each suite from the repository root. Catalog tests:
 
 ```bash
-mvn -f backend/pom.xml test
+mvn -f catalog-service/pom.xml test
 ```
 
 Loan-service tests:
@@ -592,7 +592,7 @@ can archive old published records without touching pending ones.
 
 ```text
 .
-├── backend
+├── catalog-service
 │   └── src
 ├── loan-service
 │   └── src

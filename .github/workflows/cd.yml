@@ -29,7 +29,7 @@ jobs:
         run: kind create cluster --name biblioteca --config k8s/kind-config.yaml
       - name: Build and load application images
         run: |
-          docker build -t biblioteca/catalog:local backend
+          docker build -t biblioteca/catalog:local catalog-service
           docker build -t biblioteca/loan:local loan-service
           docker build -t biblioteca/frontend:local frontend
           kind load docker-image --name biblioteca \
@@ -136,7 +136,7 @@ jobs:
       matrix:
         include:
           - image: catalog-service
-            context: backend
+            context: catalog-service
           - image: loan-service
             context: loan-service
           - image: frontend

@@ -8,11 +8,11 @@ permissions:
   contents: read
 
 jobs:
-  backend-tests:
+  service-tests:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        module: [backend, loan-service]
+        module: [catalog-service, loan-service]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -46,6 +46,6 @@ jobs:
       - run: docker compose config --quiet
       - run: kubectl kustomize k8s >/dev/null
       - run: |
-          docker build -t biblioteca/catalog:test backend
+          docker build -t biblioteca/catalog:test catalog-service
           docker build -t biblioteca/loan:test loan-service
           docker build -t biblioteca/frontend:test frontend

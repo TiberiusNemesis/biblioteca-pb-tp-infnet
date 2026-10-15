@@ -57,7 +57,7 @@ services:
     ports: ["9411:9411"]
 
   catalog-service:
-    build: ./backend
+    build: ./catalog-service
     image: biblioteca/catalog:local
     restart: unless-stopped
     environment:

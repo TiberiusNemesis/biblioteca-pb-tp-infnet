@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: catalog-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [catalog-service:8080]
+  - job_name: loan-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [loan-service:8081]

@@ -1,0 +1,162 @@
+name: Publish container images
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  verify-deployment:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Install Kind
+        run: |
+          curl --fail --location --output kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+      - name: Create local deployment cluster
+        run: kind create cluster --name biblioteca --config k8s/kind-config.yaml
+      - name: Build and load application images
+        run: |
+          docker build -t biblioteca/catalog:local backend
+          docker build -t biblioteca/loan:local loan-service
+          docker build -t biblioteca/frontend:local frontend
+          kind load docker-image --name biblioteca \
+            biblioteca/catalog:local biblioteca/loan:local biblioteca/frontend:local
+      - name: Install Metrics Server
+        run: |
+          kubectl --context kind-biblioteca apply -f \
+            https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.0/components.yaml
+          kubectl --context kind-biblioteca -n kube-system patch deployment metrics-server \
+            --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+      - name: Deploy and wait for workloads
+        run: |
+          kubectl --context kind-biblioteca apply -k k8s
+          kubectl --context kind-biblioteca -n biblioteca rollout status statefulset/catalog-postgres --timeout=180s
+          kubectl --context kind-biblioteca -n biblioteca rollout status statefulset/loan-postgres --timeout=180s
+          kubectl --context kind-biblioteca -n biblioteca rollout status statefulset/rabbitmq --timeout=180s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/catalog-service --timeout=240s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/loan-service --timeout=240s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/frontend --timeout=120s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/prometheus --timeout=300s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/loki --timeout=300s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/zipkin --timeout=300s
+          kubectl --context kind-biblioteca -n biblioteca rollout status deployment/grafana --timeout=300s
+          kubectl --context kind-biblioteca -n biblioteca rollout status daemonset/alloy --timeout=300s
+      - name: Run integrated verification
+        run: |
+          set -euo pipefail
+
+          base_url="http://localhost:5173"
+          timestamp="$(date +%s)"
+          due_date="$(date -d '+14 days' +%F)"
+
+          wait_until() {
+            local description="$1"
+            for _ in $(seq 1 30); do
+              if "$2"; then
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for ${description}." >&2
+            return 1
+          }
+
+          grafana_ready() {
+            curl --fail --silent http://localhost:3000/api/health |
+              jq -e '.database == "ok"' >/dev/null 2>&1
+          }
+
+          prometheus_ready() {
+            curl --fail --silent --user admin:admin \
+              http://localhost:3000/api/datasources/proxy/uid/Prometheus/api/v1/targets |
+              jq -e '.data.activeTargets | length >= 2 and all(.[]; .health == "up")' >/dev/null 2>&1
+          }
+
+          traces_ready() {
+            curl --fail --silent 'http://localhost:9411/api/v2/traces?limit=10' |
+              jq -e 'length > 0' >/dev/null 2>&1
+          }
+
+          logs_ready() {
+            curl --fail --silent --user admin:admin \
+              http://localhost:3000/api/datasources/proxy/uid/Loki/loki/api/v1/labels |
+              jq -e '.status == "success" and (.data | length > 0)' >/dev/null 2>&1
+          }
+
+          curl --fail --silent "${base_url}/health" >/dev/null
+          book_response="$(curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d "{\"title\":\"Deployment verification ${timestamp}\",\"author\":\"CI\",\"isbn\":\"978000${timestamp: -7}\",\"publishedYear\":2026}" \
+            "${base_url}/api/books")"
+          book_id="$(jq -er '.id' <<<"${book_response}")"
+
+          loan_response=""
+          for _ in $(seq 1 30); do
+            if loan_response="$(curl --fail --silent --show-error \
+              -H 'Content-Type: application/json' \
+              -d "{\"bookId\":${book_id},\"borrowerName\":\"CI\",\"dueDate\":\"${due_date}\"}" \
+              "${base_url}/api/loans" 2>/dev/null)"; then
+              break
+            fi
+            sleep 1
+          done
+          loan_id="$(jq -er '.id' <<<"${loan_response}")"
+
+          conflict_status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d "{\"bookId\":${book_id},\"borrowerName\":\"Conflict\",\"dueDate\":\"${due_date}\"}" \
+            "${base_url}/api/loans")"
+          test "${conflict_status}" = "409"
+          curl --fail --silent --show-error -X PATCH \
+            "${base_url}/api/loans/${loan_id}/return" | jq -e '.status == "RETURNED"' >/dev/null
+
+          wait_until "Grafana" grafana_ready
+          wait_until "healthy Prometheus targets" prometheus_ready
+          wait_until "Zipkin traces" traces_ready
+          wait_until "centralized Loki logs" logs_ready
+
+  publish:
+    needs: verify-deployment
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: catalog-service
+            context: backend
+          - image: loan-service
+            context: loan-service
+          - image: frontend
+            context: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Normalize registry namespace
+        id: registry
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.registry.outputs.owner }}/biblioteca-${{ matrix.image }}:${{ github.event.workflow_run.head_sha }}
+            ghcr.io/${{ steps.registry.outputs.owner }}/biblioteca-${{ matrix.image }}:latest

@@ -1,0 +1,379 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: prometheus}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: biblioteca-prometheus}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: biblioteca-prometheus}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: biblioteca-prometheus}
+subjects: [{kind: ServiceAccount, name: prometheus, namespace: biblioteca}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: prometheus-config}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: spring-services
+        metrics_path: /actuator/prometheus
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [biblioteca]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: catalog-service|loan-service
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_port_name]
+            regex: http
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: application
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: prometheus}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: prometheus}
+  template:
+    metadata:
+      labels: {app: prometheus}
+    spec:
+      serviceAccountName: prometheus
+      securityContext: {fsGroup: 65534}
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.2.1
+          args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+          ports: [{name: http, containerPort: 9090}]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, initialDelaySeconds: 5}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus}
+            - {name: data, mountPath: /prometheus}
+      volumes:
+        - {name: config, configMap: {name: prometheus-config}}
+        - {name: data, persistentVolumeClaim: {claimName: prometheus-data}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: prometheus}
+spec:
+  selector: {app: prometheus}
+  ports: [{name: http, port: 9090, targetPort: http}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: prometheus-data}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: loki-config}
+data:
+  loki.yml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+    common:
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        kvstore:
+          store: inmemory
+    schema_config:
+      configs:
+        - from: 2024-01-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      allow_structured_metadata: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: loki}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: loki}
+  template:
+    metadata:
+      labels: {app: loki}
+    spec:
+      securityContext: {fsGroup: 10001}
+      containers:
+        - name: loki
+          image: grafana/loki:3.4.2
+          args: ["-config.file=/etc/loki/loki.yml"]
+          ports: [{name: http, containerPort: 3100}]
+          readinessProbe: {httpGet: {path: /ready, port: http}, initialDelaySeconds: 5}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/loki}
+            - {name: data, mountPath: /loki}
+      volumes:
+        - {name: config, configMap: {name: loki-config}}
+        - {name: data, persistentVolumeClaim: {claimName: loki-data}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: loki}
+spec:
+  selector: {app: loki}
+  ports: [{name: http, port: 3100, targetPort: http}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: loki-data}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: alloy}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: biblioteca-alloy}
+rules:
+  - apiGroups: [""]
+    resources: [pods, namespaces, nodes]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: biblioteca-alloy}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: biblioteca-alloy}
+subjects: [{kind: ServiceAccount, name: alloy, namespace: biblioteca}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: alloy-config}
+data:
+  config.alloy: |
+    discovery.kubernetes "pods" {
+      role = "pod"
+    }
+    discovery.relabel "pod_logs" {
+      targets = discovery.kubernetes.pods.targets
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        regex = "biblioteca"
+        action = "keep"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_namespace"]
+        target_label = "namespace"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_name"]
+        target_label = "pod"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_container_name"]
+        target_label = "container"
+      }
+      rule {
+        source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+        separator = "/"
+        replacement = "/var/log/pods/*$1/*.log"
+        target_label = "__path__"
+      }
+    }
+    local.file_match "pod_logs" {
+      path_targets = discovery.relabel.pod_logs.output
+    }
+    loki.source.file "pod_logs" {
+      targets = local.file_match.pod_logs.targets
+      forward_to = [loki.write.default.receiver]
+    }
+    loki.write "default" {
+      endpoint {
+        url = "http://loki:3100/loki/api/v1/push"
+      }
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: alloy}
+spec:
+  selector:
+    matchLabels: {app: alloy}
+  template:
+    metadata:
+      labels: {app: alloy}
+    spec:
+      serviceAccountName: alloy
+      containers:
+        - name: alloy
+          image: grafana/alloy:v1.7.5
+          args: [run, /etc/alloy/config.alloy, --server.http.listen-addr=0.0.0.0:12345]
+          ports: [{name: http, containerPort: 12345}]
+          readinessProbe: {httpGet: {path: /-/ready, port: http}, initialDelaySeconds: 5}
+          livenessProbe: {httpGet: {path: /-/ready, port: http}, initialDelaySeconds: 15}
+          resources:
+            requests: {cpu: 25m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 256Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/alloy}
+            - {name: pod-logs, mountPath: /var/log/pods, readOnly: true}
+      volumes:
+        - {name: config, configMap: {name: alloy-config}}
+        - {name: pod-logs, hostPath: {path: /var/log/pods}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: zipkin}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: zipkin}
+  template:
+    metadata:
+      labels: {app: zipkin}
+    spec:
+      containers:
+        - name: zipkin
+          image: openzipkin/zipkin:3
+          ports: [{name: http, containerPort: 9411}]
+          readinessProbe: {httpGet: {path: /health, port: http}, initialDelaySeconds: 10}
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 768Mi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: zipkin}
+spec:
+  type: NodePort
+  selector: {app: zipkin}
+  ports: [{name: http, port: 9411, targetPort: http, nodePort: 30411}]
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: grafana-config}
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - {name: Prometheus, uid: Prometheus, type: prometheus, access: proxy, url: http://prometheus:9090, isDefault: true}
+      - {name: Loki, uid: Loki, type: loki, access: proxy, url: http://loki:3100}
+      - {name: Zipkin, uid: Zipkin, type: zipkin, access: proxy, url: http://zipkin:9411}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: grafana-dashboard-config}
+data:
+  dashboards.yml: |
+    apiVersion: 1
+    providers:
+      - name: Biblioteca
+        folder: Biblioteca
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+  services.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "Prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "id": 1,
+          "targets": [{"expr": "sum(rate(http_server_requests_seconds_count[5m])) by (application)", "legendFormat": "{{application}}"}],
+          "title": "HTTP request rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "Prometheus"},
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "id": 2,
+          "targets": [{"expr": "sum(jvm_memory_used_bytes) by (application)", "legendFormat": "{{application}}"}],
+          "title": "JVM memory used",
+          "type": "timeseries"
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["biblioteca", "tp5"],
+      "title": "Biblioteca services",
+      "uid": "biblioteca-services",
+      "version": 1
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: grafana}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: grafana}
+  template:
+    metadata:
+      labels: {app: grafana}
+    spec:
+      securityContext: {fsGroup: 472}
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.6.0
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom: {secretKeyRef: {name: biblioteca-secrets, key: grafana-admin-user}}
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: {secretKeyRef: {name: biblioteca-secrets, key: grafana-admin-password}}
+          ports: [{name: http, containerPort: 3000}]
+          readinessProbe: {httpGet: {path: /api/health, port: http}, initialDelaySeconds: 10}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts:
+            - {name: datasources, mountPath: /etc/grafana/provisioning/datasources}
+            - {name: dashboard-config, mountPath: /etc/grafana/provisioning/dashboards/dashboards.yml, subPath: dashboards.yml}
+            - {name: dashboard-config, mountPath: /var/lib/grafana/dashboards/services.json, subPath: services.json}
+            - {name: data, mountPath: /var/lib/grafana}
+      volumes:
+        - {name: datasources, configMap: {name: grafana-config}}
+        - {name: dashboard-config, configMap: {name: grafana-dashboard-config}}
+        - {name: data, persistentVolumeClaim: {claimName: grafana-data}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: grafana}
+spec:
+  type: NodePort
+  selector: {app: grafana}
+  ports: [{name: http, port: 3000, targetPort: http, nodePort: 30300}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: grafana-data}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}

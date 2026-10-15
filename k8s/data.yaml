@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: catalog-postgres
+spec:
+  serviceName: catalog-postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: catalog-postgres}
+  template:
+    metadata:
+      labels: {app: catalog-postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - {name: POSTGRES_DB, value: biblioteca}
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: biblioteca-secrets, key: catalog-db-username}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: biblioteca-secrets, key: catalog-db-password}}
+          ports: [{name: postgres, containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [sh, -c, "pg_isready -U biblioteca -d biblioteca"]}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: catalog-postgres}
+spec:
+  selector: {app: catalog-postgres}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: loan-postgres
+spec:
+  serviceName: loan-postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: loan-postgres}
+  template:
+    metadata:
+      labels: {app: loan-postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - {name: POSTGRES_DB, value: loans}
+            - name: POSTGRES_USER
+              valueFrom: {secretKeyRef: {name: biblioteca-secrets, key: loan-db-username}}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: biblioteca-secrets, key: loan-db-password}}
+          ports: [{name: postgres, containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [sh, -c, "pg_isready -U loans -d loans"]}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: loan-postgres}
+spec:
+  selector: {app: loan-postgres}
+  ports: [{name: postgres, port: 5432, targetPort: postgres}]

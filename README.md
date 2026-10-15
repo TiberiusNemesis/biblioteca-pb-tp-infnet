@@ -1,13 +1,18 @@
-# Event-Driven Library Catalog and Loans - InfNet TP4
+# Production-Ready Event-Driven Library - InfNet TP5
 
 **Author:** Tiberius Dourado<br>
-**Stack:** Java 21, Spring Boot 3.5, Spring AMQP, RabbitMQ 4, Spring Data JPA,
-PostgreSQL 16, Flyway, React 18, TypeScript, and Vite
+**Stack:** Java 21, Spring Boot 3.5, Spring AMQP, RabbitMQ 4, PostgreSQL 16,
+React 18, Docker, Kubernetes, Prometheus, Grafana, Loki, Alloy, and Zipkin
 
 This project manages a library catalog and its loans through two independently
 persisted Spring Boot services and one React interface. The fourth delivery
 replaces the synchronous service-to-service catalog lookup with versioned domain
 events delivered by RabbitMQ.
+
+The fifth delivery packages every application as a non-root container, provides
+Docker Compose and Kubernetes deployments, exposes health and Prometheus
+metrics, centralizes structured logs in Loki, sends distributed traces to
+Zipkin, and automates validation and image publication with GitHub Actions.
 
 The REST APIs and user interface remain synchronous at the system boundary.
 Inside the system, each service commits its domain change and outgoing event in
@@ -43,6 +48,27 @@ flowchart LR
     Loan -. exhausted retries .-> DLQ
 ```
 
+The production topology adds the operational layer around the TP4 event flow:
+
+```mermaid
+flowchart TB
+    User[User] --> Frontend[Frontend and API proxy]
+    Frontend --> Catalog[Catalog service]
+    Frontend --> Loan[Loan service]
+    Catalog --> CatalogDB[(Catalog PostgreSQL)]
+    Loan --> LoanDB[(Loan PostgreSQL)]
+    Catalog <--> Rabbit[(RabbitMQ)]
+    Loan <--> Rabbit
+    Catalog --> Zipkin[Zipkin traces]
+    Loan --> Zipkin
+    Catalog --> Prometheus[Prometheus metrics]
+    Loan --> Prometheus
+    Alloy[Grafana Alloy] --> Loki[Loki logs]
+    Prometheus --> Grafana[Grafana]
+    Loki --> Grafana
+    Zipkin --> Grafana
+```
+
 | Component | Responsibility | Port |
 | --- | --- | --- |
 | Catalog service | Books, immutable history, and catalog event outbox | `8080` |
@@ -52,6 +78,10 @@ flowchart LR
 | Loan PostgreSQL | Loan-owned tables and projection | `5433` |
 | RabbitMQ AMQP | Event transport | `5672` |
 | RabbitMQ Management | Broker administration interface | `15672` |
+| Grafana | Metrics, logs, and trace data sources | `3000` |
+| Prometheus | Service metrics | `9090` |
+| Loki | Aggregated structured logs | `3100` |
+| Zipkin | Distributed traces | `9411` |
 
 The services do not share tables, entities, or database credentials. OpenFeign
 is no longer used. `LoanService` reads `catalog_book_projection`, which is owned
@@ -152,13 +182,125 @@ have no meaningful service boundary.
 - Maven 3.9 or newer
 - Node.js 20 or newer
 - Docker with Docker Compose
+- `kubectl` and Kind for the local Kubernetes option
+- `curl` and `jq` for the integrated verification commands
 
 ## Start the Application
+
+### Docker Compose
+
+Build and start the complete system from the repository root:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+Open the application at `http://localhost:5173`. Docker Compose also starts Grafana
+at `http://localhost:3000`, Prometheus at `http://localhost:9090`, Zipkin at
+`http://localhost:9411`, and RabbitMQ Management at
+`http://localhost:15672`. Grafana uses `admin`/`admin`, and RabbitMQ uses
+`biblioteca`/`biblioteca`.
+
+Wait until every container reports `healthy` or `running`, then verify the main
+endpoints:
+
+```bash
+curl --fail http://localhost:5173/health
+curl --fail http://localhost:3000/api/health
+curl --fail http://localhost:9090/-/ready
+curl --fail http://localhost:9411/health
+```
+
+Stop the stack without deleting data:
+
+```bash
+docker compose down
+```
+
+Use `docker compose down -v` only when a completely clean database and broker
+state is required.
+
+### Local Kubernetes with Kind
+
+Create the local cluster once:
+
+```bash
+kind create cluster --name biblioteca --config k8s/kind-config.yaml
+```
+
+Build and load the application images:
+
+```bash
+docker build -t biblioteca/catalog:local backend
+docker build -t biblioteca/loan:local loan-service
+docker build -t biblioteca/frontend:local frontend
+kind load docker-image --name biblioteca \
+  biblioteca/catalog:local biblioteca/loan:local biblioteca/frontend:local
+```
+
+Install Metrics Server for the local HPA demonstration:
+
+```bash
+kubectl --context kind-biblioteca apply -f \
+  https://github.com/kubernetes-sigs/metrics-server/releases/download/v0.9.0/components.yaml
+kubectl --context kind-biblioteca -n kube-system patch deployment metrics-server \
+  --type=json \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+```
+
+Deploy the system and wait for every workload:
+
+```bash
+kubectl --context kind-biblioteca apply -k k8s
+kubectl --context kind-biblioteca -n biblioteca rollout status statefulset/catalog-postgres --timeout=180s
+kubectl --context kind-biblioteca -n biblioteca rollout status statefulset/loan-postgres --timeout=180s
+kubectl --context kind-biblioteca -n biblioteca rollout status statefulset/rabbitmq --timeout=180s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/catalog-service --timeout=240s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/loan-service --timeout=240s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/frontend --timeout=120s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/prometheus --timeout=300s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/loki --timeout=300s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/zipkin --timeout=300s
+kubectl --context kind-biblioteca -n biblioteca rollout status deployment/grafana --timeout=300s
+kubectl --context kind-biblioteca -n biblioteca rollout status daemonset/alloy --timeout=300s
+kubectl --context kind-biblioteca -n biblioteca get pods,pvc,hpa
+```
+
+The application, Grafana, and Zipkin keep ports `5173`, `3000`, and `9411`.
+RabbitMQ Management uses `http://localhost:15673` in Kind to avoid the common
+local RabbitMQ port conflict. Run either Docker Compose or Kind at one time
+because they share the application and observability ports.
+
+The values in `k8s/config.yaml` are local demonstration credentials. Replace
+them through an external secret manager before deploying outside a development
+environment.
+
+After source changes, rebuild and reload the images, then restart the application
+deployments:
+
+```bash
+docker build -t biblioteca/catalog:local backend
+docker build -t biblioteca/loan:local loan-service
+docker build -t biblioteca/frontend:local frontend
+kind load docker-image --name biblioteca \
+  biblioteca/catalog:local biblioteca/loan:local biblioteca/frontend:local
+kubectl --context kind-biblioteca -n biblioteca rollout restart \
+  deployment/catalog-service deployment/loan-service deployment/frontend
+```
+
+Delete the local cluster when it is no longer needed:
+
+```bash
+kind delete cluster --name biblioteca
+```
+
+### Run Components Separately for Development
 
 ### 1. Start PostgreSQL and RabbitMQ
 
 ```bash
-docker compose up -d
+docker compose up -d postgres loans-postgres rabbitmq zipkin
 docker compose ps
 ```
 
@@ -262,19 +404,119 @@ active loan returns `409`.
 
 ## Automated Verification
 
-Run from the repository root:
+Run each suite from the repository root. Catalog tests:
 
 ```bash
-mvn -f backend/pom.xml clean test
-mvn -f loan-service/pom.xml clean test
+mvn -f backend/pom.xml test
+```
+
+Loan-service tests:
+
+```bash
+mvn -f loan-service/pom.xml test
+```
+
+Frontend tests and production build:
+
+```bash
+npm --prefix frontend ci
 npm --prefix frontend test
 npm --prefix frontend run build
+```
+
+Deployment configuration validation:
+
+```bash
 docker compose config --quiet
+kubectl kustomize k8s >/dev/null
+jq empty observability/grafana/dashboards/services.json
 ```
 
 The suites cover catalog CRUD and history, event factories, transactional
 outboxes, publisher confirmations, local projection updates, duplicate and stale
-messages, loan rules, retry/DLQ topology, REST validation, and frontend behavior.
+messages, loan rules, retry/DLQ topology, REST validation, frontend behavior,
+Actuator exposure, and the Nginx routing configuration.
+
+For an integrated test after Docker Compose or Kind is running, open
+`http://localhost:5173`, create a book, wait for its event to reach the loan
+projection, borrow it, confirm that a second active loan returns a conflict, and
+return the first loan. Then verify monitoring with:
+
+```bash
+curl --fail http://localhost:5173/health
+curl --fail --user admin:admin http://localhost:3000/api/health
+curl --fail --user admin:admin \
+  http://localhost:3000/api/datasources/proxy/uid/Prometheus/api/v1/targets
+curl --fail http://localhost:9411/api/v2/traces?limit=10
+curl --fail --user admin:admin \
+  http://localhost:3000/api/datasources/proxy/uid/Loki/loki/api/v1/labels
+```
+
+## Observability
+
+- Spring Boot Actuator provides liveness, readiness, and Prometheus endpoints.
+- Prometheus scrapes both Java services and Grafana loads the included service
+  dashboard automatically in Docker Compose.
+- Applications write structured JSON logs. Grafana Alloy collects container or
+  Kubernetes pod logs and forwards them to Loki.
+- Micrometer tracing exports HTTP, scheduled outbox, and messaging spans to
+  Zipkin. Trace IDs are also present in application logs for correlation.
+
+Useful checks when Docker Compose is running:
+
+```bash
+curl http://localhost:5173/health
+curl http://localhost:9090/api/v1/targets
+curl http://localhost:9411/api/v2/traces?limit=10
+```
+
+## CI/CD
+
+`.github/workflows/ci.yml` runs both Maven suites, frontend tests and build,
+deployment configuration validation, and all three container builds on pushes
+and pull requests. After CI succeeds on `main`, `.github/workflows/cd.yml`
+deploys the exact revision to an ephemeral Kind cluster, runs the integrated
+smoke test, and only then publishes versioned and `latest` images to GitHub
+Container Registry.
+
+## Operations
+
+Inspect and scale the Kubernetes deployment:
+
+```bash
+kubectl --context kind-biblioteca -n biblioteca get pods,hpa
+kubectl --context kind-biblioteca -n biblioteca top pods
+kubectl --context kind-biblioteca -n biblioteca scale deployment/catalog-service --replicas=2
+```
+
+The HPA may adjust manual replica counts back toward its configured target.
+Roll back a failed deployment revision with:
+
+```bash
+kubectl --context kind-biblioteca -n biblioteca rollout history deployment/catalog-service
+kubectl --context kind-biblioteca -n biblioteca rollout undo deployment/catalog-service
+```
+
+Back up both Docker Compose databases before maintenance:
+
+```bash
+docker compose exec -T postgres pg_dump -U biblioteca biblioteca > catalog-backup.sql
+docker compose exec -T loans-postgres pg_dump -U loans loans > loans-backup.sql
+```
+
+Restore into empty databases with `psql` after confirming that the target data
+may be replaced. Persistent volumes protect restarts but are not substitutes for
+external backups.
+
+For troubleshooting, inspect workload events and structured logs:
+
+```bash
+docker compose ps
+docker compose logs --tail=200 catalog-service loan-service alloy loki
+kubectl --context kind-biblioteca -n biblioteca get events --sort-by=.lastTimestamp
+kubectl --context kind-biblioteca -n biblioteca logs deployment/catalog-service --tail=200
+kubectl --context kind-biblioteca -n biblioteca describe pod -l app=catalog-service
+```
 
 ## Demonstration
 
@@ -294,7 +536,7 @@ messages, loan rules, retry/DLQ topology, REST validation, and frontend behavior
 
 1. Complete the normal flow so the local projection exists.
 2. Stop only the catalog Spring Boot process.
-3. Call `POST http://localhost:8081/api/loans` for a projected book that has no
+3. Call `POST http://localhost:5173/api/loans` for a projected book that has no
    active loan.
 4. The loan succeeds because validation is local. Catalog mutation and catalog UI
    operations remain unavailable until that service restarts.
@@ -356,6 +598,9 @@ can archive old published records without touching pending ones.
 │   └── src
 ├── frontend
 │   └── src
+├── k8s
+├── observability
+├── .github/workflows
 ├── docker-compose.yml
 └── README.md
 ```

@@ -1,53 +1,155 @@
+name: biblioteca
+
+x-app-logging: &app-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: biblioteca
       POSTGRES_USER: biblioteca
       POSTGRES_PASSWORD: biblioteca
-    ports:
-      - "5431:5432"
-    volumes:
-      - biblioteca_data:/var/lib/postgresql/data
+    ports: ["5431:5432"]
+    volumes: [biblioteca_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U biblioteca -d biblioteca"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   loans-postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: loans
       POSTGRES_USER: loans
       POSTGRES_PASSWORD: loans
-    ports:
-      - "5433:5432"
-    volumes:
-      - loans_data:/var/lib/postgresql/data
+    ports: ["5433:5432"]
+    volumes: [loans_data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U loans -d loans"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   rabbitmq:
     image: rabbitmq:4-management-alpine
+    restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: biblioteca
       RABBITMQ_DEFAULT_PASS: biblioteca
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+    ports: ["5672:5672", "15672:15672"]
+    volumes: [rabbitmq_data:/var/lib/rabbitmq]
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
       timeout: 5s
-      retries: 12
+      retries: 20
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    restart: unless-stopped
+    ports: ["9411:9411"]
+
+  catalog-service:
+    build: ./backend
+    image: biblioteca/catalog:local
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/biblioteca
+      DB_USERNAME: biblioteca
+      DB_PASSWORD: biblioteca
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: biblioteca
+      RABBITMQ_PASSWORD: biblioteca
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      zipkin: {condition: service_started}
+    logging: *app-logging
+
+  loan-service:
+    build: ./loan-service
+    image: biblioteca/loan:local
+    restart: unless-stopped
+    environment:
+      LOAN_DB_URL: jdbc:postgresql://loans-postgres:5432/loans
+      LOAN_DB_USERNAME: loans
+      LOAN_DB_PASSWORD: loans
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: biblioteca
+      RABBITMQ_PASSWORD: biblioteca
+      ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+    depends_on:
+      loans-postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      zipkin: {condition: service_started}
+    logging: *app-logging
+
+  frontend:
+    build: ./frontend
+    image: biblioteca/frontend:local
+    restart: unless-stopped
+    ports: ["5173:8080"]
+    depends_on:
+      catalog-service: {condition: service_healthy}
+      loan-service: {condition: service_healthy}
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    ports: ["9090:9090"]
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      catalog-service: {condition: service_healthy}
+      loan-service: {condition: service_healthy}
+
+  loki:
+    image: grafana/loki:3.4.2
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports: ["3100:3100"]
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.7.5
+    restart: unless-stopped
+    command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345"]
+    ports: ["12345:12345"]
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports: ["3000:3000"]
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus, loki, zipkin]
 
 volumes:
   biblioteca_data:
   loans_data:
   rabbitmq_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
